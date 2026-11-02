@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useStore } from '../store';
 import { Empty, PageHead, Spinner } from '../components/ui';
+import { ask } from '../components/ask';
 import { downloadBlob, exportPNG, fileNameFor } from '../lib/memes';
 import type { Meme } from '../types';
 
@@ -31,7 +32,7 @@ export function Saved({ go }: { go: (r: string) => void }) {
   };
 
   const newCollection = async () => {
-    const name = prompt('Collection name (e.g. "Travis at the gym")');
+    const name = await ask.prompt('Collection name, e.g. "Travis at the gym"', '', 'Create');
     if (!name) return;
     const c = await store.addCollection(name, COLLECTION_EMOJI[collections.length % COLLECTION_EMOJI.length]);
     setFilter(c.id);
@@ -57,8 +58,8 @@ export function Saved({ go }: { go: (r: string) => void }) {
               <>
                 <button
                   title="Rename"
-                  onClick={() => {
-                    const n = prompt('Rename collection', c.name);
+                  onClick={async () => {
+                    const n = await ask.prompt('Rename collection', c.name);
                     if (n) store.renameCollection(c.id, n);
                   }}
                 >
@@ -66,8 +67,8 @@ export function Saved({ go }: { go: (r: string) => void }) {
                 </button>
                 <button
                   title="Delete collection"
-                  onClick={() => {
-                    if (confirm(`Delete "${c.name}"? Memes inside are kept as uncategorized.`)) {
+                  onClick={async () => {
+                    if (await ask.confirm(`Delete "${c.name}"? Memes inside are kept as uncategorized.`, { ok: 'Delete', danger: true })) {
                       store.deleteCollection(c.id);
                       setFilter('all');
                     }
@@ -123,7 +124,7 @@ export function Saved({ go }: { go: (r: string) => void }) {
                     onClick={async () => {
                       setBusyId(m.id);
                       try {
-                        downloadBlob(await exportPNG(m), fileNameFor(m));
+                        await downloadBlob(await exportPNG(m), fileNameFor(m));
                       } catch (e) {
                         store.toast((e as Error).message, 'err');
                       } finally {
@@ -134,7 +135,7 @@ export function Saved({ go }: { go: (r: string) => void }) {
                   >
                     ⬇
                   </button>
-                  <button className="btn btn--sm" aria-label="Delete" onClick={() => confirm(`Delete "${m.title}" forever?`) && store.deleteMeme(m.id).then(() => store.toast('Deleted. Travis lives to fight another day.'))}>
+                  <button className="btn btn--sm" aria-label="Delete" onClick={async () => (await ask.confirm(`Delete "${m.title}" forever?`, { ok: 'Delete', danger: true })) && store.deleteMeme(m.id).then(() => store.toast('Deleted. Travis lives to fight another day.'))}>
                     🗑
                   </button>
                 </div>

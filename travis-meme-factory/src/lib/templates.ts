@@ -508,3 +508,19 @@ export const TEMPLATES: MemeTemplate[] = [
 ];
 
 export const getTemplate = (id: string) => TEMPLATES.find((t) => t.id === id);
+
+/** What each text box means, so the AI can fill templates sensibly. */
+export const BOX_HINTS: Record<string, string[]> = {
+  drake: ['the sensible thing Travis rejects', 'the dumb thing Travis prefers'],
+  distracted: ['the shiny new distraction', 'Travis (the guy looking)', 'the responsibility he is ignoring'],
+  'two-buttons': ['bad option 1', 'bad option 2', 'who is sweating (usually Travis + context)'],
+  'expanding-brain': ['level 1 (normal)', 'level 2 (dumber)', 'level 3 (dumber still)', 'level 4 (cosmic Travis stupidity)'],
+  'change-my-mind': ['a hot take about Travis', 'tagline, usually CHANGE MY MIND'],
+  'yelling-cat': ['the furious accusation at Travis', 'Travis’s unbothered excuse, starting with "Travis:"'],
+  mocking: ['something Travis said, starting with "Travis:"', 'the same line repeated back mockingly'],
+  'one-does-not': ['"One does not simply"', 'the impossible task involving Travis'],
+  'surprised-pikachu': ['two lines: "Travis: <does dumb thing>" newline "Travis when <obvious consequence>:"'],
+  'galaxy-brain': ['setup: "Travis when he..."', 'the galaxy-brained dumb realization'],
+  'breaking-news': ['ALL-CAPS news headline about Travis', 'short ticker line'],
+  classic: ['top text', 'bottom text'],
+};

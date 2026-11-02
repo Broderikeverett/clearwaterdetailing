@@ -3,6 +3,7 @@ import { useStore } from '../store';
 import { TEMPLATES } from '../lib/templates';
 import { memeFromPhoto, memeFromTemplate, readImageFile } from '../lib/memes';
 import { MemePreview } from '../components/MemePreview';
+import { ask } from '../components/ask';
 import { PageHead, Spinner } from '../components/ui';
 
 export function Templates() {
@@ -38,7 +39,7 @@ export function Templates() {
             setBusy(true);
             try {
               const img = await readImageFile(f);
-              const name = prompt('Name this template', f.name.replace(/\.[^.]+$/, '')) || 'Custom template';
+              const name = (await ask.prompt('Name this template', f.name.replace(/\.[^.]+$/, ''))) || 'Custom template';
               await store.addCustomTemplate({ ...img, name });
               store.toast(`"${name}" added to your templates.`);
             } catch (err) {
@@ -64,7 +65,7 @@ export function Templates() {
                   <strong>{t.name}</strong>
                   <div className="row">
                     <button className="btn btn--sm btn--primary" onClick={() => store.openInEditor({ ...memeFromPhoto(t), title: `${t.name} (Travis edition)` })}>Use</button>
-                    <button className="btn btn--sm" onClick={() => confirm(`Delete "${t.name}"?`) && store.deleteCustomTemplate(t.id)}>🗑</button>
+                    <button className="btn btn--sm" onClick={async () => (await ask.confirm(`Delete "${t.name}"?`, { ok: 'Delete', danger: true })) && store.deleteCustomTemplate(t.id)}>🗑</button>
                   </div>
                 </div>
               </div>

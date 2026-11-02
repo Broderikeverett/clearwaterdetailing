@@ -12,6 +12,17 @@ npm run build        # static site in dist/ (deploy anywhere: Netlify, Vercel, G
 npm run build:single # one self-contained HTML file in dist-single/ (AirDrop it, email it, host it anywhere)
 ```
 
+## Live group version (claude.ai)
+
+`npm run build:artifact` writes `dist-artifact/travis-meme-factory.html`, which is published as a claude.ai Artifact. On claude.ai the app also gets:
+
+- **Travis Lore**: friends submit stories about Travis, stored in a shared database.
+- **Claude Roaster**: Claude reads the lore and writes roasts at Spicy, Savage, or Nuclear, or builds full memes by picking a template and filling each box. It runs on each viewer's own Claude account, so there's no API key. Hard limits stay on at every level: no jokes about protected traits, no threats, nothing sexual.
+- **The Wall**: memes posted for the whole group. Meme of the Day picks from it.
+- **Shared Meme Battle leaderboard.**
+
+The cloud code lives in `src/cloud.tsx`. Outside claude.ai every capability resolves to null and the app falls back to on-device storage and the offline joke bank.
+
 ## Features
 
 | Area | What it does |

@@ -6,11 +6,13 @@ import { Empty, Modal, PageHead, Spinner } from '../components/ui';
 import { FONTS } from '../lib/render';
 import { TEMPLATES } from '../lib/templates';
 import {
-  cloneMeme, downloadBlob, exportPNG, fileNameFor, imageLayer, memeFromPhoto, memeFromTemplate, readImageFile,
+  cloneMeme, wallImage, downloadBlob, exportPNG, fileNameFor, imageLayer, memeFromPhoto, memeFromTemplate, readImageFile,
   shareBlob, sizeForAspect, stickerLayer, textLayer,
 } from '../lib/memes';
 import { EMOJI_STICKERS, ROAST_CATEGORIES, generateRoasts } from '../lib/roasts';
 import { uid } from '../lib/random';
+import { ask } from '../components/ask';
+import { inArtifact, slimMeme, useCloud } from '../cloud';
 
 type Tab = 'text' | 'stickers' | 'photo' | 'layers' | 'save';
 
@@ -18,6 +20,7 @@ const SWATCHES = ['#ffffff', '#000000', '#ffde00', '#ff3b3b', '#3ab8ff', '#8b5cf
 
 export function Create() {
   const store = useStore();
+  const cloud = useCloud();
   const { draft, toast } = store;
   const [meme, setMeme] = useState<Meme | null>(null);
   const [past, setPast] = useState<Meme[]>([]);
@@ -146,7 +149,7 @@ export function Create() {
             <span className="muted">Pure chaos, no rules.</span>
           </button>
         </div>
-        <button className="btn" onClick={() => (window.location.hash = '#/templates')}>🧩 Browse all {TEMPLATES.length} templates</button>
+        <button className="btn" onClick={() => (window.location.hash = '#templates')}>🧩 Browse all {TEMPLATES.length} templates</button>
         {busy && <Spinner label={busy} />}
       </div>
     );
@@ -205,12 +208,13 @@ export function Create() {
           throw e;
         });
         if (!ok) {
-          downloadBlob(blob, name);
+          await downloadBlob(blob, name);
           toast('Sharing not supported here, downloaded instead.', 'info');
         }
       } else {
-        downloadBlob(blob, name);
-        toast(`Downloaded ${name} (${Math.round(blob.size / 1024)} KB). Travis has been notified. (He hasn't.)`);
+        const r = await downloadBlob(blob, name);
+        if (r === 'declined') toast('Download cancelled.', 'info');
+        else toast(`${name} (${Math.round(blob.size / 1024)} KB) is ready. Travis has been notified. (He hasn't.)`);
       }
     } catch (e) {
       toast((e as Error).message, 'err');
@@ -253,7 +257,7 @@ export function Create() {
                 <button className="chip chip--danger" onClick={() => removeLayer(sel.id)}>🗑 Delete</button>
               </>
             )}
-            <button className="chip" onClick={() => { if (confirm('Start a new meme? Unsaved changes will be lost.')) { setMeme(null); committed.current = null; } }}>
+            <button className="chip" onClick={async () => { if (await ask.confirm('Start a new meme? Unsaved changes will be lost.', { ok: 'Start fresh', danger: true })) { setMeme(null); committed.current = null; } }}>
               ＋ New
             </button>
           </div>
@@ -285,7 +289,8 @@ export function Create() {
           <div className="export-row">
             <button className="btn btn--primary" onClick={() => doExport('download')}>⬇ Download PNG</button>
             <button className="btn" onClick={doSave}>{isSaved ? '💾 Update save' : '💾 Save'}</button>
-            {'share' in navigator && <button className="btn" onClick={() => doExport('share')}>📤 Share</button>}
+            {cloud.status === 'live' && <button className="btn" onClick={() => setTab('save')}>🧱 Post</button>}
+            {!inArtifact() && 'share' in navigator && <button className="btn" onClick={() => doExport('share')}>📤 Share</button>}
           </div>
         </div>
 
@@ -431,7 +436,7 @@ export function Create() {
                   <p className="muted small">Using a built-in template. Swap it:</p>
                   <div className="mini-templates">
                     {TEMPLATES.map((t) => (
-                      <button key={t.id} className="chip" onClick={() => { if (confirm(`Switch to ${t.name}? Captions reset.`)) load({ ...memeFromTemplate(t), id: meme.id, collectionId: meme.collectionId, title: meme.title }); }}>
+                      <button key={t.id} className="chip" onClick={async () => { if (await ask.confirm(`Switch to ${t.name}? Captions reset.`, { ok: 'Switch' })) load({ ...memeFromTemplate(t), id: meme.id, collectionId: meme.collectionId, title: meme.title }); }}>
                         {t.emoji} {t.name}
                       </button>
                     ))}
@@ -472,7 +477,7 @@ export function Create() {
                   value={meme.collectionId ?? ''}
                   onChange={async (e) => {
                     if (e.target.value === '__new') {
-                      const name = prompt('Name your collection (e.g. "Travis at work")');
+                      const name = await ask.prompt('Name your collection, e.g. "Travis at work"', '', 'Create');
                       if (name) {
                         const c = await store.addCollection(name);
                         change({ ...meme, collectionId: c.id });
@@ -489,6 +494,24 @@ export function Create() {
               </label>
               <div className="row wrap">
                 <button className="btn btn--primary" onClick={doSave}>💾 {isSaved ? 'Update' : 'Save'} meme</button>
+                {cloud.status === 'live' && (
+                  <button
+                    className="btn"
+                    onClick={async () => {
+                      setBusy('Posting to the Wall…');
+                      try {
+                        await cloud.postToWall({ title: meme.title, image: await wallImage(meme), meme: slimMeme(meme) });
+                        toast('Posted to the Wall. Everyone can see it now.');
+                      } catch (e) {
+                        toast((e as Error).message, 'err');
+                      } finally {
+                        setBusy(null);
+                      }
+                    }}
+                  >
+                    🧱 Post to the Wall
+                  </button>
+                )}
                 <button className="btn" onClick={() => { load({ ...cloneMeme(meme), id: uid('m'), title: meme.title + ' (copy)' }); toast('Duplicated — this is a new copy.'); }}>⧉ Save as copy</button>
               </div>
               <h4>Export size</h4>

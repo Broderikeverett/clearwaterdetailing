@@ -3,7 +3,9 @@ import type { Meme } from '../types';
 import { useStore } from '../store';
 import { MemePreview } from '../components/MemePreview';
 import { Modal, Spinner } from '../components/ui';
-import { downloadBlob, exportPNG, fileNameFor, randomMeme, readImageFile } from '../lib/memes';
+import { ask } from '../components/ask';
+import { useCloud, type WallPost } from '../cloud';
+import { dataUrlToBlob, downloadBlob, exportPNG, fileNameFor, randomMeme, readImageFile } from '../lib/memes';
 import { LOADING_LINES, breakingNews, motdTitle } from '../lib/roasts';
 import { pick, seeded, todayKey } from '../lib/random';
 
@@ -17,12 +19,20 @@ export function Home({ go }: { go: (r: string) => void }) {
   const photoInput = useRef<HTMLInputElement>(null);
 
   // Meme of the Day: deterministic per date (so it's the same all day), rerollable.
+  // Shared wall posts win, so the whole group sees the same champion today.
+  const cloud = useCloud();
+  const [openPost, setOpenPost] = useState<WallPost | null>(null);
   const motd = useMemo(() => {
     const rng = seeded(todayKey() + ':' + reroll);
-    const pool = memes.length ? memes : null;
-    const meme = pool ? pool[Math.floor(rng() * pool.length)] : null;
-    return { meme, title: motdTitle(rng) };
-  }, [memes, reroll]);
+    const wallPool = [...cloud.wall].sort((a, b) => a.id.localeCompare(b.id));
+    if (wallPool.length) {
+      const post = wallPool[Math.floor(rng() * wallPool.length)];
+      return { meme: post.meme ?? null, image: post.meme ? null : post.image, post, title: motdTitle(rng) };
+    }
+    const meme = memes.length ? memes[Math.floor(rng() * memes.length)] : null;
+    return { meme, image: null as string | null, post: null as WallPost | null, title: motdTitle(rng) };
+  }, [memes, cloud.wall, reroll]);
+  const motdCount = cloud.wall.length || memes.length;
 
   const headlines = useMemo(() => breakingNews(8), []);
 
@@ -67,6 +77,9 @@ export function Home({ go }: { go: (r: string) => void }) {
             <>MAKE TRAVIS LOOK STUPID</>
           )}
         </button>
+        <button className="lore-cta" onClick={() => go(cloud.lore.length ? 'roasts' : 'lore')}>
+          🧠 {cloud.lore.length ? `Roast him with his own stories (${cloud.lore.length} in the lore)` : 'Tell me Travis stories → AI roasts built on them'}
+        </button>
         <p className="muted small">
           {photos.length
             ? `Using ${photos.length} Travis photo${photos.length > 1 ? 's' : ''} from the Photo Bank.`
@@ -78,18 +91,19 @@ export function Home({ go }: { go: (r: string) => void }) {
         <div className="card motd">
           <div className="card__head">
             <span className="kicker">🏆 Meme of the Day</span>
-            {memes.length > 1 && (
+            {motdCount > 1 && (
               <button className="chip" onClick={() => setReroll((r) => r + 1)}>🎲 Reroll</button>
             )}
           </div>
-          {motd.meme ? (
+          {motd.meme || motd.image ? (
             <>
               <h2 className="motd__title">“{motd.title}”</h2>
               <div className="motd__frame">
-                <MemePreview meme={motd.meme} maxWidth={700} />
+                {motd.meme ? <MemePreview meme={motd.meme} maxWidth={700} /> : <img src={motd.image!} alt={motd.post?.title} className="motd__img" />}
               </div>
+              {motd.post && <small className="muted">Posted by {motd.post.by === cloud.me ? 'you' : cloud.names[motd.post.by] || 'someone'}</small>}
               <div className="row wrap">
-                <button className="btn btn--sm" onClick={() => store.openInEditor(motd.meme!)}>✏️ Edit</button>
+                {motd.meme && <button className="btn btn--sm" onClick={() => store.openInEditor(motd.meme!)}>✏️ Edit</button>}
                 <button className="btn btn--sm" onClick={() => go('battle')}>⚔️ Send to battle</button>
               </div>
             </>
@@ -113,7 +127,7 @@ export function Home({ go }: { go: (r: string) => void }) {
             {photos.slice(0, 11).map((p) => (
               <div key={p.id} className="photo-tile">
                 <img src={p.src} alt="Travis" />
-                <button className="photo-tile__x" aria-label="Delete photo" onClick={() => confirm('Remove this Travis from the bank?') && store.deletePhoto(p.id)}>
+                <button className="photo-tile__x" aria-label="Delete photo" onClick={async () => (await ask.confirm('Remove this Travis from the photo bank?', { ok: 'Remove', danger: true })) && store.deletePhoto(p.id)}>
                   ✕
                 </button>
               </div>
@@ -151,6 +165,69 @@ export function Home({ go }: { go: (r: string) => void }) {
           </div>
         </div>
       </section>
+
+      <section className="card">
+        <div className="card__head">
+          <span className="kicker">🧱 The Wall{cloud.status === 'live' ? ' · shared with the group' : ''}</span>
+          <span className="muted small">{cloud.wall.length} posted</span>
+        </div>
+        {cloud.status === 'local' ? (
+          <p className="muted small">The shared Wall works in the published app on claude.ai.</p>
+        ) : cloud.status === 'connecting' ? (
+          <p className="muted small">Connecting to the group…</p>
+        ) : cloud.status === 'error' ? (
+          <p className="muted small">Couldn't reach shared storage right now. Your own memes still save on this device.</p>
+        ) : cloud.wall.length === 0 ? (
+          <p className="muted small">Nothing posted yet. Make a meme, then hit “Post to the Wall” on the Save tab.</p>
+        ) : (
+          <div className="wall-grid">
+            {cloud.wall.map((w) => (
+              <button key={w.id} className="wall-tile" onClick={() => setOpenPost(w)} aria-label={w.title}>
+                <img src={w.image} alt={w.title} loading="lazy" />
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <Modal open={!!openPost} onClose={() => setOpenPost(null)} title={openPost?.title ?? ''} wide>
+        {openPost && (
+          <div className="chaos">
+            <img src={openPost.image} alt={openPost.title} className="wall-full" />
+            <small className="muted">
+              Posted by {openPost.by === cloud.me ? 'you' : cloud.names[openPost.by] || 'someone'} · {new Date(openPost.createdAt).toLocaleDateString()}
+            </small>
+            <div className="row wrap center">
+              {openPost.meme && <button className="btn btn--primary" onClick={() => { store.openInEditor(openPost.meme!); setOpenPost(null); }}>✏️ Remix</button>}
+              <button
+                className="btn"
+                onClick={async () => {
+                  const blob = dataUrlToBlob(openPost.image);
+                  await downloadBlob(blob, openPost.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 40) + '.jpg');
+                }}
+              >
+                ⬇ Download
+              </button>
+              {(openPost.by === cloud.me || cloud.isOwner) && (
+                <button
+                  className="btn btn--danger"
+                  onClick={async () => {
+                    if (!(await ask.confirm('Take this meme off the Wall for everyone?', { ok: 'Delete', danger: true }))) return;
+                    try {
+                      await cloud.deleteWall(openPost.id);
+                      setOpenPost(null);
+                    } catch (e) {
+                      toast((e as Error).message, 'err');
+                    }
+                  }}
+                >
+                  🗑 Delete
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
 
       <ChaosModal meme={chaos} onClose={() => setChaos(null)} onAgain={makeStupid} rolling={rolling} />
     </div>
@@ -191,7 +268,7 @@ export function ChaosModal({ meme, onClose, onAgain, rolling }: { meme: Meme | n
             onClick={async () => {
               setBusy(true);
               try {
-                downloadBlob(await exportPNG(meme), fileNameFor(meme));
+                await downloadBlob(await exportPNG(meme), fileNameFor(meme));
               } catch (e) {
                 store.toast((e as Error).message, 'err');
               } finally {

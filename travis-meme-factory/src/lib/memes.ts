@@ -3,6 +3,7 @@ import { TEMPLATES, getTemplate } from './templates';
 import { pick, uid, sample } from './random';
 import { breakingNews, randomTicker, anyCaption, EMOJI_STICKERS } from './roasts';
 import { prepareMeme, renderMeme } from './render';
+import { saveFile } from '../cloud';
 
 export const DESIGN_W = 1000;
 
@@ -91,7 +92,7 @@ export function memeFromPhoto(p: { src: string; w: number; h: number }, withCapt
 }
 
 /** Drop Travis's face into the template's slots. */
-function addFaces(meme: Meme, t: MemeTemplate | undefined, photos: Photo[]) {
+export function addFaces(meme: Meme, t: MemeTemplate | undefined, photos: Photo[]) {
   if (!t || !photos.length || !t.slots.length) return;
   const slots = t.slots.length > 1 ? sample(t.slots, Math.ceil(Math.random() * t.slots.length)) : t.slots;
   for (const s of slots) {
@@ -168,6 +169,15 @@ export async function thumbnail(meme: Meme, width = 360): Promise<string> {
   return c.toDataURL('image/jpeg', 0.82);
 }
 
+/** JPEG small enough for a shared wall post (< ~180 KB). */
+export async function wallImage(meme: Meme): Promise<string> {
+  for (const [w, q] of [[900, 0.82], [760, 0.75], [600, 0.7], [480, 0.65]] as const) {
+    const url = (await renderToCanvas(meme, w)).toDataURL('image/jpeg', q);
+    if (url.length < 180_000) return url;
+  }
+  return (await renderToCanvas(meme, 360)).toDataURL('image/jpeg', 0.6);
+}
+
 export async function exportPNG(meme: Meme, width = 2000): Promise<Blob> {
   const c = await renderToCanvas(meme, width);
   return new Promise((resolve, reject) =>
@@ -178,16 +188,8 @@ export async function exportPNG(meme: Meme, width = 2000): Promise<Blob> {
 export const fileNameFor = (meme: Meme) =>
   (meme.title || 'travis-meme').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 50) + '.png';
 
-export function downloadBlob(blob: Blob, name: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 4000);
-}
+/** Save via claude.ai's download prompt when hosted there, else a normal browser download. */
+export const downloadBlob = (blob: Blob, name: string) => saveFile(blob, name);
 
 export async function shareBlob(blob: Blob, name: string): Promise<boolean> {
   const file = new File([blob], name, { type: 'image/png' });
@@ -229,6 +231,15 @@ export async function readImageFile(file: File, maxDim = 2000): Promise<{ src: s
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export function dataUrlToBlob(url: string): Blob {
+  const [head, b64] = url.split(',');
+  const mime = /data:([^;]+)/.exec(head)?.[1] ?? 'application/octet-stream';
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
 }
 
 export const cloneMeme = (m: Meme): Meme => JSON.parse(JSON.stringify(m));

@@ -86,7 +86,7 @@ export interface Photo {
 export interface LeaderboardEntry {
   id: string;
   memeId: string | null;
-  meme: Meme;
+  meme?: Meme;
   thumbnail: string;
   title: string;
   rating: number;
